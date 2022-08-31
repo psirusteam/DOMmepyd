@@ -1,0 +1,447 @@
+---
+title: "Análisis de encuestas de hogares con R"
+subtitle: "Módulo 1: Análisis de variables continuas"
+date: "CEPAL - Unidad de Estadísticas Sociales"
+output:
+  beamer_presentation:
+    colortheme: dove
+    fonttheme: default
+    incremental: yes
+    theme: Berkeley
+    toc: yes
+    slide_level: 2
+    #highlight: pygments
+  ioslides_presentation:
+    incremental: yes
+    widescreen: yes
+    toc: yes
+  slidy_presentation:
+    incremental: yes
+Email: andres.gutierrez@cepal.org
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE, warning = FALSE, message = FALSE, error = FALSE)
+options(digits = 4)
+library (survey)
+library(srvyr)
+library(convey)
+library(TeachingSampling)
+library(printr)
+library(haven)
+```
+
+# Motivación
+
+Los desarrollos estadísticos están en permanente evolución, surgiendo nuevas metodologías y desarrollando nuevos enfoquen el análisis de encuestas. Estos desarrollos parten de la academia, luego son adoptados por las empresas (privadas o estatales) y entidades estatales. Las cuales crean la necesidad que estos desarrollos sean incluidos en software estadísticos licenciados. Proceso que puede llevar mucho tiempo.
+
+## Motivación 
+
+Algunos investigadores para acortar los tiempos y poner al servicio de la comunidad sus descubrimientos y desarrollos, hacen la implementasión de sus metodología en paquetes estadísticos de código abierto como **R** o **Python**. Teniendo **R** un mayor número de desarrollos en el procesamiento de las encuestas.
+
+## Motivación 
+
+Dentro del software *R* se disponen de múltiples librería para el prcesamiento de encuestas, estas varian dependiendo el enfoque de programación desarrollado por el autor o la necesidad que se busque suplir. En esta presentación nos centraremos en las libreria `survey` y `srvyr`. Se incluiran más librerías de acuerdo a las necesidad se presente. 
+
+
+# Lectura y procesamientos de encuestas con `R`
+
+## Lectura de la base
+
+La base de datos (tablas de datos) puede estar disponible en una variedad de formatos (.`xlsx`, `.dat`, `.cvs`, `.sav`, `.txt`, ...), sin embargo, por experiencia es recomendable realizar la lectura de cualesquiera de estos formatos y proceder inmediatamente a guardarlo en un archivo de extensión **.rds**, la cual es nativa de `R.` El hacer esta acción reduce considerablemente los tiempo de cargue de la base de datos.
+
+## Sintaxis
+
+```{r, eval=FALSE}
+library(haven)
+encuestaDOM2020 <- read_dta("../Data/DOM_2020N1.dta")
+saveRDS(object = encuestaDOM2020,
+        file =  "../Data/encuesta.rds")
+```
+
+\scriptsize 
+```{r}
+encuesta <- readRDS("../Data/encuesta.rds") %>% 
+  transmute(estrato  = as.character(`_estrato`),
+            upm  = as.character(`_upm`),
+            fep  = `_fep`,
+            Zone = as_factor(areageo2),
+            Sex = as_factor(sexo), 
+            Age = edad, 
+            lp, li,  # Linea de pobreza e indigencia
+            Income = ingcorte, 
+            anoest, # años de estudio
+            empleo = condact3)
+```
+
+
+## Definir diseño de la muestra con `srvyr`
+La librería `srvyr` surge como un complemento para `survey`. Estas librerías permiten definir objetos  tipo "**survey.design**" a los que se aplican los métodos "**survey.design**" complementados con la programación de tubería ( %>% ) del paquete `tidyverse`. 
+
+## Cómo definir un objeto *survey.design*
+Para el desarrollo  de la presentación se define el diseño muestral con la función `as_survey_design`. 
+\scriptsize 
+```{r}
+# En caso de tener estratos con una muestra.
+# Calcula la varianza centrada en la media de la pob.
+options(survey.lonely.psu = "adjust") 
+library(srvyr)
+
+diseno <- encuesta %>% # Base de datos.
+  as_survey_design(
+    strata = estrato,  # Id de los estratos.
+    ids = upm,         # Id para las observaciones.
+    weights = fep,      # Factores de expansión. 
+    nest = T           # Valida el anidado dentro 
+                       #  del estrato
+  )
+```
+
+# Análisis gráfico
+
+## Histograma ponderado para la variable ingreso
+A continuación observan la sintaxis para crear una histograma de la variable ingreso haciendo uso la función `svyhist` de la librería `survey`  
+```{r, hist1, eval = FALSE}
+svyhist(
+  ~ Income ,
+  diseno,
+  main = "",
+  col = "grey80",
+  xlab = "Ingreso",
+  probability = FALSE
+)
+
+```
+
+## Histograma ponderado para la variable ingreso
+
+```{r, hist1, echo = FALSE, eval = TRUE}
+```
+
+## Dividiendo la muestra en Sub-grupos
+
+En ocasiones se desea realizar estimaciones por sub-grupos de la población, en este caso se extraer 4 sub-grupos de la encuesta.
+
+```{r}
+sub_Urbano <- diseno %>%  filter(Zone == "Urbana")
+sub_Rural  <- diseno %>%  filter(Zone == "Rural")
+sub_Mujer  <- diseno %>%  filter(Sex == "Mujer")
+sub_Hombre <- diseno %>%  filter(Sex == "Hombre")
+```
+
+## Histograma ponderado en sub-grupos
+La sintaxis incluye un filtro de las personas mayores a 18 años
+\scriptsize
+```{r, hist3, eval=FALSE}
+par(mfrow = c(1,2))
+svyhist(
+  ~ Income ,
+  design = subset(sub_Mujer, Age >= 18),
+  main = "Mujer",
+  breaks = 30,
+  col = "grey80",
+  xlab = "Ingreso"
+)
+
+svyhist(
+  ~ Income ,
+  design = subset(sub_Hombre, Age >= 18),
+  main = "Hombre",
+  breaks = 30,
+  col = "grey80",
+  xlab = "Ingreso"
+)
+
+```
+
+## Histograma ponderado en sub-grupos
+
+```{r, hist3, echo = FALSE, eval = TRUE, out.width="80%", fig.align="center"}
+```
+
+Observe que hay una mayor proporción de hombres en el rango de los 1000 a 3000 que mujeres.
+
+## Boxplot ponderado del ingreso por sub-grupos
+
+```{r,box1, echo = TRUE, eval = FALSE}
+par(mfrow = c(1,2))
+svyboxplot(
+  Income ~1 ,
+  sub_Urbano,
+  col = "grey80",
+  ylab = "Ingreso",
+  xlab = "Urbano")
+
+svyboxplot(
+  Income ~ 1 ,
+  sub_Rural,
+  col = "grey80",
+  ylab = "Ingreso",
+  xlab = "Rural"
+)
+```
+
+## Boxplot ponderado del ingreso por sub-grupos
+
+```{r,box1, echo = FALSE, eval = TRUE}
+```
+
+# Estimaciones puntuales. 
+
+Después de realizar el análisis gráfico de las tendencias de las variables continuas, 
+es necesarios obtener las estimaciones puntuales de la variables.  Los cuales son obtenidos 
+de forma general o desagregado por niveles, de acuerdo con las necesidades de la investigación. 
+
+## Estimación de totales e intervalos de confianza del ingreso
+La estimación del total se mediante la función `svytotal` y el 
+intervalos de confianza con la función `confint` de la librería `survey`.
+
+```{r}
+svytotal(~Income, diseno, deff=T) %>%
+  data.frame()
+confint(svytotal (~Income, diseno, deff=T))
+
+```
+
+## Estimación de totales por sub-grupos
+En esta oportunidad se hace uso de la función `cascade`de la libraría `srvyr`, la cual permite agregar
+la suma de las categorías al final tabla. 
+La función `group_by` permite obtener resultados agrupados por los niveles de interés. 
+
+```{r}
+diseno %>% group_by(Sex) %>%
+  cascade(Total = survey_total(
+    Income, level = 0.95,
+    vartype =  c("se", "ci")),
+          .fill = "Nacional")
+```
+
+## Estimación de la media e intervalo de confianza del ingreso
+
+Un resultado más interesante para las variables ingreso y gasto es el promedio de la variable. 
+
+```{r}
+svymean(~Income, diseno, deff=T) %>% 
+  data.frame()
+confint(svymean (~Income, diseno, deff=T))
+```
+
+## Estimación de la media por sub-grupos
+
+La función `cascade` regresa el resultado promedio ignorando los niveles. 
+\scriptsize
+
+```{r}
+diseno %>% group_by(Zone, Sex) %>%
+  cascade(
+    Media = survey_mean(
+      Income, level = 0.95,
+       vartype =  c("se", "ci")),
+        .fill = "Nacional") %>%
+  data.frame()
+
+```
+
+## Estimación de la varianza de los ingresos por sub-grupo
+
+La estimación de la varianza se obtiene con `survey_var` 
+
+```{r}
+(tab_var <- diseno %>% group_by(Zone) %>% 
+   summarise(Var = 
+  survey_var(
+    Income,
+    level = 0.95,
+    vartype =  c("se", "ci"),
+   )))
+```
+
+## Estimación de la desviación estándar de los ingresos por sub-grupo
+
+```{r}
+(tab_sd <- diseno %>% group_by(Zone) %>% 
+   summarise(Sd = 
+  survey_sd(
+    Income,
+    level = 0.95,
+    vartype =  c("se", "ci"),
+   )
+)) %>% data.frame()
+
+```
+
+## Estimación de la mediana para el ingreso
+
+La estimación de la median se obtiene con `survey_median` 
+
+```{r}
+diseno %>% summarise(Mediana = 
+  survey_median(
+    Income,
+    level = 0.95,
+    vartype =  c("se", "ci"),
+   ))
+```
+
+## Estimación de la mediana por sub-grupo
+
+```{r}
+diseno %>% group_by(Zone) %>% 
+  summarise(Mediana = 
+  survey_median(
+    Income,
+    level = 0.95,
+    vartype =  c("se", "ci"),
+   ))
+```
+
+## Estimación de la mediana por sub-grupo
+
+```{r}
+diseno %>% group_by(Sex) %>% 
+  summarise(Mediana = 
+  survey_median(
+    Income,
+    level = 0.95,
+    vartype =  c("se", "ci"),
+   ))
+```
+
+## Estimación del quantil 0.5 para el ingreso
+
+La estimación de la median se obtiene con `survey_quantile`
+
+```{r}
+diseno %>% 
+  summarise(
+    Q =  survey_quantile(
+    Income,
+    quantiles = 0.5,
+    level = 0.95,
+    vartype =  c("se", "ci"),
+    interval_type = "score"
+   ))
+```
+
+## Estimación del quantil 0.25 para el ingreso por sub-grupo
+
+```{r}
+diseno %>% group_by(Sex) %>% 
+  summarise(
+    Q =  survey_quantile(
+    Income,
+    quantiles = 0.25,
+    level = 0.95,
+    vartype =  c("se", "ci"),
+    interval_type = "score"
+   ))
+```
+
+## Estimación de los quantiles 0.25 y 0.75 para el ingreso por sub-grupo
+
+```{r}
+diseno %>% group_by(Zone) %>% 
+  summarise(
+    Q =  survey_quantile(
+    Income,
+    quantiles = c(0.25, 0.75),
+    level = 0.95,
+    vartype =  c("se"),
+    interval_type = "score"
+   ))
+```
+
+
+## Estimación de la razón entre hombres y mujeres
+La estimación de una razón se obtiene con la función `survey_ratio`.  
+```{r}
+diseno %>% summarise(
+    Razon =  survey_ratio(
+      numerator = (Sex == "Mujer"),# creando dummy.
+      denominator = (Sex == "Hombre"),# creando dummy.
+      level = 0.95,
+    vartype =  c("se", "ci")
+    ))
+```
+
+## Estimación de la razón entre hombres y mujeres en la zona rural
+
+```{r}
+sub_Rural %>% summarise(
+    Razon =  survey_ratio(
+      numerator = (Sex == "Mujer"),
+      denominator = (Sex == "Hombre"),
+      level = 0.95,
+    vartype =  c("se", "ci")
+    ))
+```
+
+
+# Pruebas de diferencia medias 
+Los analistas de los datos de las encuestas suelen estar interesados en hacer inferencias sobre las diferencias de las estadísticas descriptivas de dos subpoblaciones. A continuación se muestra como realizar estas comparaciones haciendo uso de la función `svyttest`
+
+### Ingreso promedio por sexo 
+```{r, echo=FALSE}
+diseno %>% group_by(Sex) %>%
+  summarise(
+    Media = survey_mean(
+      Income, level = 0.95,
+       vartype =  c("se", "ci"))) %>%
+  data.frame()
+
+```
+
+## Pruebas de diferencia medias de los ingresos entre hombres y mujeres
+La comparación de los ingresos medios entre hombre y mujeres de la muestra se realiza así: 
+```{r, test1, eval=FALSE}
+svyttest(Income ~ Sex, diseno)
+```
+
+\scriptsize
+
+```{r, test1, eval=TRUE, echo=FALSE}
+```
+
+\normalsize
+
+
+## Pruebas de diferencia medias de los ingresos entre hombres y mujeres en la zona urbana
+También es posible realizar el procedimiento en sub-grupos de interés.  
+```{r, echo=FALSE}
+sub_Urbano %>% group_by(Sex) %>%
+  summarise(
+    Media = survey_mean(
+      Income, level = 0.95,
+       vartype =  c("se"))) %>%
+  data.frame()
+
+```
+
+```{r, test2, eval=FALSE}
+svyttest(Income ~ Sex, sub_Urbano)
+```
+
+\scriptsize
+```{r, test2, eval=TRUE, echo=FALSE}
+```
+
+\normalsize
+
+El resultando indica que no hay diferencia entre los ingreso medios.
+
+## Pruebas de diferencia medias de los ingresos entre hombres y mujeres mayores a 18 años
+
+```{r, test3, eval=FALSE}
+svyttest(Income ~ Sex, diseno %>% 
+           filter(Age > 18, empleo == 1))
+```
+
+\scriptsize
+```{r, test3, eval=TRUE, echo=FALSE}
+```
+
+## ¡Gracias!
+
+::: yellow
+*Email*: [andres.gutierrez\@cepal.org](mailto:andres.gutierrez@cepal.org){.email}
+:::
