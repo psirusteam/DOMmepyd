@@ -1,7 +1,7 @@
 ---
 title: "Análisis de encuestas de hogares con R"
 subtitle: "Módulo 2: Análisis de variables categóricas"
-date: "CEPAL - Unidad de Estadísticas Sociales"
+date: "CEPAL - División de Estadísticas Sociales"
 output:
   beamer_presentation:
     colortheme: dove
